@@ -1,0 +1,8 @@
+__pycache__
+.venv
+.pytest_cache
+.vscode
+# uv files
+.python-version
+uv.lock
+pyproject.toml

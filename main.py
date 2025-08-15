@@ -1,57 +1,134 @@
+"""
+Ad-hoc benchmarking harness for traversal costing algorithms.
+
+Generates random traversals and path costs, runs both the baseline and optimized
+implementations, and prints simple timing comparisons.
+"""
+from __future__ import annotations
+
 import random
 import copy
+from statistics import mean, median, pstdev
+from typing import Dict, List, Tuple
 
 from helpers import profile_call
 from funcs import logic_as_is, improved_logic
 from models import Traversal, Node, CostAtNode
 
-
-######################################################################################################
-paramSets = [
+# (traversals_n, nodesPerTraversal_n, pathCosts_n)
+PARAM_SETS: List[Tuple[int, int, int]] = [
     (250, 150, 250),
-    (500, 150, 250),
-    (1000, 150, 250),
-    (2000, 150, 250),
+    # (500, 150, 250),
+    # (1000, 150, 250),
+    # (2000, 150, 250),
 ]
-######################################################################################################
 
-for traversalN, nodesPerTraversalN, pathCostsN in paramSets:
-    print(f"Traversal Count: {traversalN}")
+def make_random_data(
+    seed: int,
+    traversals_n: int,
+    nodesPerTraversal_n: int,
+    pathCosts_n: int,
+) -> Tuple[List[Traversal], List[CostAtNode]]:
+    """Create randomized inputs for a single benchmark run."""
+    # Check if all parameter are greater than 1
+    if traversals_n < 1 or nodesPerTraversal_n < 1 or pathCosts_n < 1:
+        raise ValueError("All sizes must be >= 1")
 
-    # Generate Input Data
-    Traversals = [
-        Traversal(nodes=[Node(id=Node_id) for Node_id in range(nodesPerTraversalN)])
-        for _ in range(traversalN)
+    rnd = random.Random(seed)
+
+    # Build traversals with contiguous node ids [0, N-1]
+    traversals = [
+        Traversal(nodes=[Node(id=i) for i in range(nodesPerTraversal_n)])
+        for _ in range(traversals_n)
     ]
 
-    PathCosts = [
-        CostAtNode(
-            node_id=random.randint(0, nodesPerTraversalN), cost=random.randint(0, 9)
-        )
-        for _ in range(pathCostsN)
+    # randint upper bound must be N-1 to avoid referencing non-existent nodes.
+    path_costs = [
+        CostAtNode(node_id=rnd.randint(0, nodesPerTraversal_n - 1), cost=rnd.randint(0, 9))
+        for _ in range(pathCosts_n)
     ]
+    return traversals, path_costs
 
-    # Execute and profile
+
+def run_profiling(
+    traversals: List[Traversal],
+    path_costs: List[CostAtNode],
+    n: int,
+) -> Dict[str, Dict[str, List]]:
+    """Run both algorithms on deep-copied inputs and return timings and results."""
     result_sets = {
         "improved": {"durations": [], "results": [], "func": improved_logic},
         "asIs": {"durations": [], "results": [], "func": logic_as_is},
     }
 
-    for _ in range(5):
-        for key, data in result_sets.items():
+    # Running both functions for 'n' number of times.
+    for _ in range(n):
+        for data in result_sets.values():
             outcome = profile_call(
-                data["func"], [copy.deepcopy(Traversals), copy.deepcopy(PathCosts)]
+                data["func"], [copy.deepcopy(traversals), copy.deepcopy(path_costs)]
             )
-            data["results"].append(outcome[0])
-            data["durations"].append(outcome[1])
+            results, duration = outcome[0], outcome[1]
+            data["results"].append([t.total_cost for t in results])
+            data["durations"].append(duration)
 
-    # Report outcome
-    for key, data in result_sets.items():
-        durations = data["durations"]
-        avg_duration = sum(durations) / len(durations)
-        print(f"\t Mean (ms)[{key.rjust(8)}]: {avg_duration:.2f} ms [{durations}]")
+    return result_sets
 
-    if result_sets["asIs"]["results"] != result_sets["improved"]["results"]:
-        print("\t(!) Algorithms don't return the same output (!)")
 
-    print("")
+def compute_results(
+    param_sets: List[Tuple[int, int, int]],
+    seed: int = 42,
+    repeats: int = 5,
+) -> Dict[Tuple[int, int, int], Dict[str, Dict[str, List]]]:
+    """Run all parameter sets; return a mapping from case -> result_sets."""
+    all_results = {}
+    for case in param_sets:
+        traversals_n, nodesPerTraversal_n, pathCosts_n = case
+        print(
+            f"Case: Traversals={traversals_n}, Nodes/Traversal={nodesPerTraversal_n}, PathCosts={pathCosts_n}"
+        )
+        traversals, path_costs = make_random_data(
+            seed=seed,
+            traversals_n=traversals_n,
+            nodesPerTraversal_n=nodesPerTraversal_n,
+            pathCosts_n=pathCosts_n,
+        )
+        all_results[case] = run_profiling(traversals, path_costs, repeats)
+    return all_results
+
+def compute_stats_and_sanity_check(all_results) -> None:
+    for case, result_sets in all_results.items():
+        traversals_n, nodesPerTraversal_n, pathCosts_n = case
+        print(
+            f"\n=== Results for Traversals={traversals_n}, Nodes/Traversal={nodesPerTraversal_n}, PathCosts={pathCosts_n} ==="
+        )
+
+        agg = {}
+        for key, data in result_sets.items():
+            duration = data["durations"]
+            agg[key] = mean(duration)
+
+            print(
+                f"\t{key:>8}: mean={mean(duration):.2f} ms | median={median(duration):.2f} ms | stdev={pstdev(duration):.2f} ms | samples={len(duration)}"
+            )
+
+        faster = min(agg, key=agg.get)
+        slower = max(agg, key=agg.get)
+        speedup = agg[slower] / agg[faster]
+        print(f"\t→ {faster} is {speedup:.2f}× faster than {slower}")
+
+        ## Sanity Check
+        if result_sets["asIs"]["results"] != result_sets["improved"]["results"]:
+            print("\t(!) Algorithms don't return the same output (!)")
+
+        print("")
+
+
+def print_results(param_sets: List[Tuple[int, int, int]]) -> None:
+    all_results = compute_results(param_sets)
+    compute_stats_and_sanity_check(all_results=all_results)
+    
+
+
+if __name__ == "__main__":
+    print("Traversal Costing Benchmark\n")
+    print_results(PARAM_SETS)
