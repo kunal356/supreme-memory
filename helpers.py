@@ -1,6 +1,10 @@
 """Helper utilities (profiling, etc.) used by the scripts."""
 import time
+import logging
+
 from typing import Callable, Any, Sequence, Tuple
+
+logger = logging.getLogger("trackbase.helpers")
 
 
 def profile_call(func: Callable[..., Any], args: Sequence[Any]) -> Tuple[list, int]:
@@ -16,6 +20,12 @@ def profile_call(func: Callable[..., Any], args: Sequence[Any]) -> Tuple[list, i
             - duration_ms is an integer duration in milliseconds.
     """
     start = time.monotonic()
-    result = func(*args)
-    duration_ms = int((time.monotonic() - start) * 1000)
-    return result, duration_ms
+    try:
+        result = func(*args)
+        duration_ms = int((time.monotonic() - start) * 1000)
+        return result, duration_ms
+    except Exception:
+        duration_ms = int((time.monotonic() - start) * 1000)
+        logger.exception("profile_call: function %r failed after %d ms", getattr(
+            func, "__name__", func), duration_ms)
+        raise
