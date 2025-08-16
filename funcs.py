@@ -5,8 +5,20 @@ The module contains two implementations:
 - improved_logic: Optimized algorithm that indexes costs by node_id to reduce complexity.
 """
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
+import logging
+
 from models import Traversal, CostAtNode
+
+logger = logging.getLogger("trackbase.funcs")
+
+
+def _ensure_lists(traversals: Optional[List[Traversal]], pathCosts: Optional[List[CostAtNode]]):
+    if traversals is None or pathCosts is None:
+        logger.warning("Received Empty/None input(s): traversals=%s pathCosts=%s",
+                       traversals is None, pathCosts is None)
+        return traversals or [], pathCosts or []
+    return traversals, pathCosts
 
 
 def logic_as_is(traversals: List[Traversal], pathCosts: List[CostAtNode]) -> List[Traversal]:
@@ -17,6 +29,11 @@ def logic_as_is(traversals: List[Traversal], pathCosts: List[CostAtNode]) -> Lis
     Returns:
         The same list of traversals, updated in-place.
     """
+    traversals, pathCosts = _ensure_lists(
+        traversals=traversals, pathCosts=pathCosts)
+    logger.debug("logic_as_is: START (traversals=%d, costs=%d)",
+                 len(traversals), len(pathCosts))
+
     for traversal in traversals:
         # Clear/initialize costs per node
         for node in traversal.nodes:
@@ -33,7 +50,7 @@ def logic_as_is(traversals: List[Traversal], pathCosts: List[CostAtNode]) -> Lis
             if node.costs:
                 for cost in node.costs:
                     traversal.total_cost += cost.cost
-
+    logger.debug("logic_as_is: END")
     return traversals
 
 
@@ -46,11 +63,20 @@ def improved_logic(traversals: List[Traversal], pathCosts: List[CostAtNode]) -> 
     Returns:
         The same list of traversals, updated in-place (also returned for convenience).
     """
+
+    traversals, pathCosts = _ensure_lists(
+        traversals=traversals, pathCosts=pathCosts)
+    logger.debug("improved_logic: START (traversals=%d, costs=%d)",
+                 len(traversals), len(pathCosts))
+
     # Group costs by node_id for O(1) lookup per node (cost_by_node).
     # Create index/hashmap of cost and node_id (sum_by_node).
     cost_by_node: Dict[int, List[CostAtNode]] = defaultdict(list)
     sum_by_node = defaultdict(int)
     for c in pathCosts:
+        if c.node_id < 0:
+            logger.warning("Node with negative node_id found: %s", c)
+            continue
         cost_by_node[c.node_id].append(c)
         sum_by_node[c.node_id] += c.cost
 
@@ -63,5 +89,5 @@ def improved_logic(traversals: List[Traversal], pathCosts: List[CostAtNode]) -> 
             if node.costs:
                 # Calculate total cost for entire traversal
                 traversal.total_cost += sum_by_node.get(node.id, 0)
-
+    logger.debug("improved_logic: END")
     return traversals

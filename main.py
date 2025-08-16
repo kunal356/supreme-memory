@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import random
 import copy
+import logging
 from statistics import mean, median, stdev
 from typing import Dict, List, Tuple
 
@@ -15,12 +16,17 @@ from helpers import profile_call
 from funcs import logic_as_is, improved_logic
 from models import Traversal, Node, CostAtNode
 
+logger = logging.getLogger("trackbase.main")
+if not logger.handlers:
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
 # (traversals_n, nodesPerTraversal_n, pathCosts_n)
 PARAM_SETS: List[Tuple[int, int, int]] = [
     (250, 150, 250),
-    # (500, 150, 250),
-    # (1000, 150, 250),
-    # (2000, 150, 250),
+    (500, 150, 250),
+    (1000, 150, 250),
+    (2000, 150, 250),
 ]
 
 
@@ -64,15 +70,20 @@ def run_profiling(
     }
 
     # Running both functions for 'n' number of times.
-    for _ in range(n):
-        for data in result_sets.values():
-            outcome = profile_call(
-                data["func"], [copy.deepcopy(
-                    traversals), copy.deepcopy(path_costs)]
-            )
-            results, duration = outcome[0], outcome[1]
-            data["results"].append([t.total_cost for t in results])
-            data["durations"].append(duration)
+    for i in range(n):
+        logger.debug("Profiling iteration %d/%d", i+1, n)
+        for name, data in result_sets.items():
+            try:
+                outcome = profile_call(
+                    data["func"], [copy.deepcopy(
+                        traversals), copy.deepcopy(path_costs)]
+                )
+                results, duration = outcome[0], outcome[1]
+                data["results"].append([t.total_cost for t in results])
+                data["durations"].append(duration)
+            except Exception:
+                logger.exception("Error while profiling function '%s'", name)
+                raise
 
     return result_sets
 
@@ -86,7 +97,7 @@ def compute_results(
     all_results = {}
     for case in param_sets:
         traversals_n, nodesPerTraversal_n, pathCosts_n = case
-        print(
+        logger.info(
             f"Case: Traversals={traversals_n}, Nodes/Traversal={nodesPerTraversal_n}, PathCosts={pathCosts_n}"
         )
         traversals, path_costs = make_random_data(
@@ -140,5 +151,11 @@ def print_results(param_sets: List[Tuple[int, int, int]]) -> None:
 
 
 if __name__ == "__main__":
-    print("Traversal Costing Benchmark\n")
-    print_results(PARAM_SETS)
+    logger.info("Traversal Costing Benchmark starting....")
+    try:
+        print_results(PARAM_SETS)
+    except Exception:
+        logger.exception("Benchmark run failed")
+        raise
+    finally:
+        logger.info("Traversal Costing Benchmark finished.")
