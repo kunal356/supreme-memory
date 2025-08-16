@@ -1,5 +1,5 @@
 """
-Ad-hoc benchmarking harness for traversal costing algorithms.
+Benchmarking harness for traversal costing algorithms.
 
 Generates random traversals and path costs, runs both the baseline and optimized
 implementations, and prints simple timing comparisons.
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import random
 import copy
-from statistics import mean, median, pstdev
+from statistics import mean, median, stdev
 from typing import Dict, List, Tuple
 
 from helpers import profile_call
@@ -23,6 +23,7 @@ PARAM_SETS: List[Tuple[int, int, int]] = [
     # (2000, 150, 250),
 ]
 
+
 def make_random_data(
     seed: int,
     traversals_n: int,
@@ -36,7 +37,7 @@ def make_random_data(
 
     rnd = random.Random(seed)
 
-    # Build traversals with contiguous node ids [0, N-1]
+    # Build traversals with node ids in [0, N-1] range.
     traversals = [
         Traversal(nodes=[Node(id=i) for i in range(nodesPerTraversal_n)])
         for _ in range(traversals_n)
@@ -44,7 +45,8 @@ def make_random_data(
 
     # randint upper bound must be N-1 to avoid referencing non-existent nodes.
     path_costs = [
-        CostAtNode(node_id=rnd.randint(0, nodesPerTraversal_n - 1), cost=rnd.randint(0, 9))
+        CostAtNode(node_id=rnd.randint(
+            0, nodesPerTraversal_n - 1), cost=rnd.randint(0, 9))
         for _ in range(pathCosts_n)
     ]
     return traversals, path_costs
@@ -55,7 +57,7 @@ def run_profiling(
     path_costs: List[CostAtNode],
     n: int,
 ) -> Dict[str, Dict[str, List]]:
-    """Run both algorithms on deep-copied inputs and return timings and results."""
+    """Run both algorithms and return timings and results."""
     result_sets = {
         "improved": {"durations": [], "results": [], "func": improved_logic},
         "asIs": {"durations": [], "results": [], "func": logic_as_is},
@@ -65,7 +67,8 @@ def run_profiling(
     for _ in range(n):
         for data in result_sets.values():
             outcome = profile_call(
-                data["func"], [copy.deepcopy(traversals), copy.deepcopy(path_costs)]
+                data["func"], [copy.deepcopy(
+                    traversals), copy.deepcopy(path_costs)]
             )
             results, duration = outcome[0], outcome[1]
             data["results"].append([t.total_cost for t in results])
@@ -95,7 +98,8 @@ def compute_results(
         all_results[case] = run_profiling(traversals, path_costs, repeats)
     return all_results
 
-def compute_stats_and_sanity_check(all_results) -> None:
+
+def display_stats(all_results) -> None:
     for case, result_sets in all_results.items():
         traversals_n, nodesPerTraversal_n, pathCosts_n = case
         print(
@@ -108,25 +112,31 @@ def compute_stats_and_sanity_check(all_results) -> None:
             agg[key] = mean(duration)
 
             print(
-                f"\t{key:>8}: mean={mean(duration):.2f} ms | median={median(duration):.2f} ms | stdev={pstdev(duration):.2f} ms | samples={len(duration)}"
+                f"\t{key:>8}: mean={mean(duration):.2f} ms | median={median(duration):.2f} ms | stdev={stdev(duration):.2f} ms | samples={len(duration)}"
             )
 
         faster = min(agg, key=agg.get)
         slower = max(agg, key=agg.get)
         speedup = agg[slower] / agg[faster]
-        print(f"\t→ {faster} is {speedup:.2f}× faster than {slower}")
+        print(
+            f"\t→ On Average {faster} function is {speedup:.2f}× faster than {slower} function")
 
-        ## Sanity Check
+
+def sanity_check(all_results) -> None:
+    for case, result_sets in all_results.items():
+        # Sanity Check
         if result_sets["asIs"]["results"] != result_sets["improved"]["results"]:
-            print("\t(!) Algorithms don't return the same output (!)")
+            print("\t(!) Algorithms don't return the same output. (!)")
+        else:
+            print("\t(!) Both the Algorithms return same output.(!)")
 
         print("")
 
 
 def print_results(param_sets: List[Tuple[int, int, int]]) -> None:
     all_results = compute_results(param_sets)
-    compute_stats_and_sanity_check(all_results=all_results)
-    
+    sanity_check(all_results=all_results)
+    display_stats(all_results=all_results)
 
 
 if __name__ == "__main__":
